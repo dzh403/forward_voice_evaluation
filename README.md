@@ -4,6 +4,28 @@
 （1）将用户上传的音频文件转发到有道云语音评测接口并返回评测结果  
 （2）将音频文件保存至oss
 
+**运行环境：**
+
+基础环境  
+```
+pip install flask oss2 gunicorn requests flask-cors
+```
+
+安装 pydub   
+```
+pip install pydub
+```
+安装 ffmpeg 
+```
+# macOS 用户   
+brew install ffmpeg
+
+# Ubuntu/Linux 用户  
+sudo apt-get install ffmpeg
+
+# 对于 Windows 用户，请从 ffmpeg 官网 下载并安装，确保将 ffmpeg 添加到环境变量中
+```
+
 
 **请求方式：**  
 - POST

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from pydub import AudioSegment
 import os
 import sys
 import uuid
@@ -34,7 +35,7 @@ CUSTOM_DOMAIN = 'oss.abc.com'
 # 确保此目录存在且有写权限
 UPLOAD_FOLDER = '/path/to/save'
 
-ALLOWED_EXTENSIONS = {'wav'}
+ALLOWED_EXTENSIONS = {'wav', 'mp3'}
 
 # 初始化Flask应用
 app = Flask(__name__)
@@ -52,6 +53,13 @@ executor = ThreadPoolExecutor(max_workers=10)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def convert_mp3_to_wav(mp3_path, wav_path):
+    # """将 MP3 文件转换为 WAV 文件，且符合 PCM 编码、16-bit 深度、单声道"""
+    audio = AudioSegment.from_mp3(mp3_path)
+    # 设置为单声道，并且设定为16位 PCM 编码
+    audio = audio.set_channels(1)  # 单声道
+    audio = audio.set_sample_width(2)  # 16位深
+    audio.export(wav_path, format="wav", codec="pcm_s16le")  # PCM编码
 
 def truncate(q):
     if q is None:
@@ -176,23 +184,37 @@ def upload_file():
         return jsonify({'error': 'No selected file', 'status': 'false'}), 400
 
     if file and allowed_file(file.filename):
-        filename = secure_filename(f"{user_id}_{word}_{int(time.time())}.wav")
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
-        try:
+        filename = secure_filename(f"{user_id}_{word}_{int(time.time())}")
+        file_extension = file.filename.rsplit('.', 1)[1].lower()
+
+
+        if file_extension == 'mp3':
+            # 如果上传的是MP3文件，保存为MP3后转换为WAV格式
+            mp3_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{filename}.mp3")
+            wav_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{filename}.wav")
+            file.save(mp3_path)
+
+            # 转换MP3为符合要求的WAV文件
+            convert_mp3_to_wav(mp3_path, wav_path)
+            os.remove(mp3_path)  # 删除临时的MP3文件
+            file_path = wav_path
+        elif file_extension == 'wav':
+            # 如果是WAV文件直接保存
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{filename}.wav")
             file.save(file_path)
-        except Exception as e:
-            return jsonify({'error': f'File saving failed: {e}', 'status': 'false'}), 500
+        else:
+            return jsonify({'error': 'Unsupported file type', 'status': 'false'}), 400
 
         # 使用OSS_PREFIX作为前缀，并为文件指定路径
-        oss_key = f"{OSS_PREFIX}/{word}/{user_id}/{filename}"
+        oss_key = f"{OSS_PREFIX}/{word}/{user_id}/{filename}.wav"
 
         # 提交后台任务
         future = executor.submit(process_file, file_path, oss_key, lang_type, text)
         try:
             result = future.result(timeout=60)  # 设置合理的超时时间
         except Exception as e:
-            return jsonify({'error': f'Processing failed: {e}'}), 500
+            return jsonify({'error': f'Processing failed: {e}', 'status': 'false'}), 500
 
         if 'error' in result.get('evaluation_result', {}):
             return jsonify(result), 500
